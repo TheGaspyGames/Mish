@@ -1,0 +1,17 @@
+{
+  "name": "gambler-helper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Discord helper bot for UnbelievaBot blackjack/roulette analysis",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "mongoose": "^8.3.4"
+  }
+}
