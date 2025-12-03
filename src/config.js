@@ -22,10 +22,13 @@ function parseIdList(value) {
 const HARDCODED_OWNER_ID = '684395420004253729';
 const HARDCODED_ALLOWED_UPDATERS = ['684395420004253729'];
 
+const OWNER_ID = process.env.OWNER_ID || HARDCODED_OWNER_ID || null;
 const envAllowed = parseIdList(process.env.ALLOWED_UPDATERS || process.env.ALLOWED_UPDATER_IDS);
 const allowedUpdaters = Array.from(
-  new Set([...HARDCODED_ALLOWED_UPDATERS.map((v) => v.toString()), ...envAllowed])
+  new Set([...HARDCODED_ALLOWED_UPDATERS.map((v) => v.toString()), ...envAllowed, OWNER_ID].filter(Boolean))
 );
+const envTrustOwners = parseIdList(process.env.TRUST_OWNER_IDS);
+const trustOwnerIds = Array.from(new Set([OWNER_ID, ...envTrustOwners].filter(Boolean)));
 
 export const config = {
   token: required('DISCORD_TOKEN'),
@@ -34,6 +37,7 @@ export const config = {
   prefix: process.env.PREFIX || '.',
   updateBranch: process.env.UPDATE_BRANCH || 'main',
   restartCommand: process.env.RESTART_CMD || process.env.UPDATE_RESTART_CMD || '',
-  ownerId: process.env.OWNER_ID || HARDCODED_OWNER_ID || null,
+  ownerId: OWNER_ID,
   allowedUpdaters,
+  trustOwnerIds,
 };
