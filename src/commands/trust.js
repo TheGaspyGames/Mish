@@ -273,7 +273,9 @@ async function handleInteraction(interaction, ctx) {
       return true;
     }
 
-    if (interaction.user.bot) {
+    const targetUser = interaction.options.getUser('usuario') || interaction.user;
+
+    if (targetUser.bot) {
       await interaction.reply({
         content: '⛔ Este comando solo se puede usar con usuarios humanos, no con bots.',
         ephemeral: true,
@@ -282,11 +284,11 @@ async function handleInteraction(interaction, ctx) {
     }
 
     const target = {
-      id: interaction.user.id,
-      mention: `<@${interaction.user.id}>`,
-      avatarURL: interaction.user.displayAvatarURL({ size: 256 }),
+      id: targetUser.id,
+      mention: `<@${targetUser.id}>`,
+      avatarURL: targetUser.displayAvatarURL({ size: 256 }),
     };
-    const status = await handleCheck(interaction.user.id, interaction.user.tag);
+    const status = await handleCheck(targetUser.id, targetUser.tag);
     await interaction.reply({ embeds: [buildStatusEmbed(target, status, { includeMiku: true })], ephemeral: true });
     return true;
   }
@@ -361,6 +363,14 @@ export const trustCommand = {
       name: 'gaspycheck',
       description: 'Consulta de trust exclusiva para the_gaspy_games (modo Miku)',
       type: ApplicationCommandOptionType.Subcommand,
+      options: [
+        {
+          name: 'usuario',
+          description: 'Usuario a consultar (opcional, por defecto tú)',
+          type: ApplicationCommandOptionType.User,
+          required: false,
+        },
+      ],
     },
     {
       name: 'resetuser',

@@ -2,6 +2,8 @@ import { ApplicationCommandOptionType } from 'discord.js';
 import { analyzeStateStats } from '../analysis.js';
 import { basicStrategy } from '../utils/basicStrategy.js';
 import { buildStateMeta, describeState } from '../utils/state.js';
+import { DAILY_LIMIT, checkAndConsumeAssist } from '../utils/trust.js';
+import { getFlavorMessage } from '../utils/flavor.js';
 import { makeCommandRegex, parseBool } from './utils.js';
 
 const MIN_STATE_SAMPLES = 10;
@@ -56,7 +58,22 @@ async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
     return { ok: false, embed: { description: 'No pude leer bien tu mano ahora mismo, espera la siguiente actualización del embed.', color: 0xed4245 } };
   }
   if (stateMeta.playerTotal > 21) {
-    return { ok: false, embed: { description: `Ya estás en ${stateMeta.playerTotal} (bust). Esa mano ya está decidida 💀`, color: 0xed4245 } };
+    const flavor = getFlavorMessage(stateMeta.playerTotal);
+    return {
+      ok: false,
+      embed: { description: `Ya estás en ${stateMeta.playerTotal} (bust). Esa mano ya está decidida 💀\n${flavor}`, color: 0xed4245 },
+    };
+  }
+
+  const usage = await checkAndConsumeAssist(playerId);
+  if (!usage.allowed) {
+    return {
+      ok: false,
+      embed: {
+        description: `⛔ Has usado tus ${DAILY_LIMIT} jugadas asistidas de hoy.\nEl entrenamiento sigue activo, pero no recibirás consejos automáticos hasta dentro de 24 horas.`,
+        color: 0xed4245,
+      },
+    };
   }
   const analysis = await analyzeStateStats(state);
   const best = analysis.bestAction;
@@ -79,6 +96,8 @@ async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
     recommendation = `No hay suficientes datos reales (min ${MIN_STATE_SAMPLES}). Estrategia basica: **${basic.toUpperCase()}**.`;
   }
 
+  const flavoredRecommendation = `${recommendation}\n\n${getFlavorMessage(stateMeta.playerTotal)}`;
+
   const actionLines = actions.length
     ? actions.map(([action, detail]) => formatActionLine(action, detail)).join('\n')
     : 'Sin datos aprendidos para este estado.';
@@ -89,7 +108,7 @@ async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
     color: 0x5865f2,
     fields: [
       { name: 'Acciones registradas', value: actionLines },
-      { name: 'Recomendacion', value: recommendation },
+      { name: 'Recomendacion', value: flavoredRecommendation },
     ],
   };
 
