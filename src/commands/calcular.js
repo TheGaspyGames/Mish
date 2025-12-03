@@ -46,8 +46,18 @@ async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
     return { ok: false, embed: { description: 'No veo una ronda activa tuya de blackjack ahora mismo.', color: 0xed4245 } };
   }
 
+  if (game.finished) {
+    return { ok: false, embed: { description: 'La ronda ya terminó, no puedo calcular sobre una mano cerrada.', color: 0xed4245 } };
+  }
+
   const state = ctx.currentStateFromRecord(game);
   const stateMeta = buildStateMeta(state);
+  if (stateMeta.playerTotal == null || !stateMeta.dealerUpCard) {
+    return { ok: false, embed: { description: 'No pude leer bien tu mano ahora mismo, espera la siguiente actualización del embed.', color: 0xed4245 } };
+  }
+  if (stateMeta.playerTotal > 21) {
+    return { ok: false, embed: { description: `Ya estás en ${stateMeta.playerTotal} (bust). Esa mano ya está decidida 💀`, color: 0xed4245 } };
+  }
   const analysis = await analyzeStateStats(state);
   const best = analysis.bestAction;
   const actions = Object.entries(analysis.actions).sort((a, b) => b[1].plays - a[1].plays);

@@ -54,11 +54,11 @@ function formatDiscordTimestamp(date) {
   return `<t:${seconds}:f>`;
 }
 
-function buildStatusEmbed(targetUser, info, viewerIsOwner) {
+function buildStatusEmbed(targetUser, info, { includeMiku } = {}) {
   const isTrusted = info.user.hasTrust;
   const color = isTrusted ? 0x1abc9c : 0xf1c40f;
   const embed = new EmbedBuilder()
-    .setTitle('📊 Estado de Trust')
+    .setTitle(includeMiku ? '📊 Estado de Trust – 🎶 Miku Mode' : '📊 Estado de Trust')
     .setColor(color)
     .setThumbnail(targetUser?.avatarURL ?? null);
 
@@ -71,7 +71,7 @@ function buildStatusEmbed(targetUser, info, viewerIsOwner) {
     { name: 'Rol de trust', value: isTrusted ? '✅ Sí (asistencias infinitas)' : '❌ No (usuario normal)', inline: true },
     {
       name: 'Asistencias usadas hoy',
-      value: isTrusted ? '∞ (modo Trust activo)' : `${info.user.assistsUsedToday} / ${DAILY_LIMIT}`,
+      value: isTrusted ? '♾️ / ♾️' : `${info.user.assistsUsedToday} / ${DAILY_LIMIT}`,
       inline: true,
     },
     {
@@ -82,8 +82,7 @@ function buildStatusEmbed(targetUser, info, viewerIsOwner) {
     { name: 'Asistencias históricas totales', value: `${info.user.totalAssistsUsed}`, inline: false }
   );
 
-  const GASPY_ID = '684395420004253729';
-  if (targetUser?.id === GASPY_ID) {
+  if (includeMiku) {
     embed.setFooter({ text: 'Powered by Hatsune Miku, diosa del RNG. 🎶' });
     embed.addFields({
       name: '🎤 Bendición especial',
@@ -192,19 +191,19 @@ async function handleMessage(message, ctx) {
     case 'check': {
       if (!opts.targetId) {
         opts.targetId = message.author.id;
-      } else if (opts.targetId !== message.author.id && !requireOwner(ctx, message.author?.id)) {
-        await message.reply('Solo el owner puede consultar a otros usuarios.');
-        return true;
       }
       const targetUser = await message.client.users.fetch(opts.targetId).catch(() => null);
+      if (targetUser?.bot) {
+        await message.reply('⛔ Este comando solo se puede usar con usuarios humanos, no con bots.');
+        return true;
+      }
       const target = {
         id: opts.targetId,
         mention: `<@${opts.targetId}>`,
         avatarURL: targetUser?.displayAvatarURL({ size: 256 }),
       };
       const status = await handleCheck(opts.targetId, targetUser?.tag || target.mention);
-      const viewerIsOwner = requireOwner(ctx, message.author?.id);
-      await message.reply({ embeds: [buildStatusEmbed(target, status, viewerIsOwner)] });
+      await message.reply({ embeds: [buildStatusEmbed(target, status, { includeMiku: false })] });
       return true;
     }
     case 'reset': {
@@ -250,8 +249,11 @@ async function handleInteraction(interaction, ctx) {
 
   if (sub === 'check') {
     const user = interaction.options.getUser('usuario') || interaction.user;
-    if (user.id !== interaction.user.id && !requireOwner(ctx, interaction.user?.id)) {
-      await interaction.reply({ content: 'Solo el owner puede consultar a otros usuarios.', ephemeral: true });
+    if (user.bot) {
+      await interaction.reply({
+        content: '⛔ Este comando solo se puede usar con usuarios humanos, no con bots.',
+        ephemeral: true,
+      });
       return true;
     }
     const target = {
@@ -260,8 +262,32 @@ async function handleInteraction(interaction, ctx) {
       avatarURL: user.displayAvatarURL({ size: 256 }),
     };
     const status = await handleCheck(user.id, user.tag);
-    const viewerIsOwner = requireOwner(ctx, interaction.user?.id);
-    await interaction.reply({ embeds: [buildStatusEmbed(target, status, viewerIsOwner)], ephemeral: true });
+    await interaction.reply({ embeds: [buildStatusEmbed(target, status, { includeMiku: false })], ephemeral: false });
+    return true;
+  }
+
+  if (sub === 'gaspycheck') {
+    const GASPY_ID = '684395420004253729';
+    if (interaction.user.id !== GASPY_ID) {
+      await interaction.reply({ content: '⛔ Este comando es exclusivo para the_gaspy_games.', ephemeral: true });
+      return true;
+    }
+
+    if (interaction.user.bot) {
+      await interaction.reply({
+        content: '⛔ Este comando solo se puede usar con usuarios humanos, no con bots.',
+        ephemeral: true,
+      });
+      return true;
+    }
+
+    const target = {
+      id: interaction.user.id,
+      mention: `<@${interaction.user.id}>`,
+      avatarURL: interaction.user.displayAvatarURL({ size: 256 }),
+    };
+    const status = await handleCheck(interaction.user.id, interaction.user.tag);
+    await interaction.reply({ embeds: [buildStatusEmbed(target, status, { includeMiku: true })], ephemeral: true });
     return true;
   }
 
@@ -327,9 +353,14 @@ export const trustCommand = {
           name: 'usuario',
           description: 'Usuario a consultar',
           type: ApplicationCommandOptionType.User,
-          required: true,
+          required: false,
         },
       ],
+    },
+    {
+      name: 'gaspycheck',
+      description: 'Consulta de trust exclusiva para the_gaspy_games (modo Miku)',
+      type: ApplicationCommandOptionType.Subcommand,
     },
     {
       name: 'resetuser',
