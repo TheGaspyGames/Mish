@@ -58,21 +58,12 @@ function buildStatusEmbed(targetUser, info, viewerIsOwner) {
   const isTrusted = info.user.hasTrust;
   const color = isTrusted ? 0x1abc9c : 0xf1c40f;
   const embed = new EmbedBuilder()
-    .setTitle(viewerIsOwner ? '📊 Estado de Trust – OWNER VIEW' : '📊 Estado de Trust')
+    .setTitle('📊 Estado de Trust')
     .setColor(color)
     .setThumbnail(targetUser?.avatarURL ?? null);
 
   if (info.resetPerformed) {
     embed.setDescription('Se aplicó el reset de 24h antes de mostrar este estado.');
-  }
-
-  if (viewerIsOwner) {
-    embed.setFooter({ text: 'Powered by Hatsune Miku, patrona del RNG. 🎶' });
-    embed.addFields({
-      name: 'OWNER',
-      value: '👑 Eres el dueño absoluto del Gambler Helper.\n🎤 Bendecido por la diosa virtual Hatsune Miku.',
-      inline: false,
-    });
   }
 
   embed.addFields(
@@ -90,6 +81,18 @@ function buildStatusEmbed(targetUser, info, viewerIsOwner) {
     },
     { name: 'Asistencias históricas totales', value: `${info.user.totalAssistsUsed}`, inline: false }
   );
+
+  const GASPY_ID = '684395420004253729';
+  if (targetUser?.id === GASPY_ID) {
+    embed.setFooter({ text: 'Powered by Hatsune Miku, diosa del RNG. 🎶' });
+    embed.addFields({
+      name: '🎤 Bendición especial',
+      value: 'Este perfil está apadrinado por Hatsune Miku.',
+      inline: false,
+    });
+  } else {
+    embed.setFooter({ text: 'Gambler Helper – /trust check' });
+  }
 
   return embed;
 }
