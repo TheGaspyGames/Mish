@@ -36,7 +36,7 @@ export function buildStateMeta(rawState = {}) {
 
   const ranks = playerCards.map(normalizeCardRank).filter(Boolean);
   const isPair = ranks.length === 2 && ranks[0] && ranks[0] === ranks[1];
-  const isSoft = computeIsSoft(ranks, playerTotal);
+  const isSoft = rawState.playerIsSoft ?? computeIsSoft(ranks, playerTotal);
   const canDouble = rawState.canDouble ?? ranks.length === 2;
   const canSplit = rawState.canSplit ?? (isPair && ranks.length === 2);
 
@@ -78,6 +78,7 @@ export function mergeStates(prev = {}, next = {}) {
     playerTotal: next.playerTotal ?? prev.playerTotal ?? null,
     dealerUpCard: next.dealerUpCard ?? prev.dealerUpCard ?? null,
     betAmount: next.betAmount ?? prev.betAmount ?? null,
+    playerIsSoft: next.playerIsSoft ?? prev.playerIsSoft ?? null,
     playerCards:
       Array.isArray(next.playerCards) && next.playerCards.length
         ? [...next.playerCards]

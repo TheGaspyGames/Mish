@@ -30,7 +30,7 @@ function extractRanksFromLine(line) {
 
 function extractHand(lines, marker) {
   const idx = lines.findIndex((l) => l.toLowerCase().includes(marker));
-  if (idx === -1) return { cards: [], total: null };
+  if (idx === -1) return { cards: [], total: null, isSoft: false };
   const cards = [];
   for (let i = idx + 1; i < lines.length; i++) {
     const line = lines[i];
@@ -44,22 +44,28 @@ function extractHand(lines, marker) {
   }
 
   let total = null;
+  let isSoft = false;
   for (let i = idx + 1; i < Math.min(lines.length, idx + 5); i++) {
     const valLine = lines[i];
     const lower = valLine.toLowerCase();
     if (lower.includes('result') || lower.includes('payout')) break;
-    const m = valLine.match(/value:\s*([0-9]{1,2})/i);
-    if (m) {
-      total = Number(m[1]);
-      break;
-    }
     if (/value:\s*blackjack/i.test(valLine)) {
       total = 21;
+      isSoft = true;
       break;
+    }
+
+    if (lower.includes('value')) {
+      const numeric = valLine.replace(/[^0-9]/g, '');
+      if (numeric) {
+        total = Number.parseInt(numeric, 10);
+        isSoft = lower.includes('soft');
+        break;
+      }
     }
   }
 
-  return { cards, total };
+  return { cards, total, isSoft };
 }
 
 export function isBlackjackEmbed(embed) {
@@ -96,6 +102,10 @@ export function parseBlackjackState(embed, message) {
   const playerHand = extractHand(lines, 'your hand');
   const dealerHand = extractHand(lines, 'dealer hand');
 
+  if (playerHand.total == null) {
+    throw new Error('No se pudo leer el valor de la mano del jugador.');
+  }
+
   const dealerMatch = lower.match(/dealer[^akqj0-9]*([akqj]|10|[2-9])/);
   const betMatch = lower.match(/(bet|apuesta)[^0-9]*([0-9][0-9,\.]*)/);
 
@@ -105,6 +115,7 @@ export function parseBlackjackState(embed, message) {
   return {
     raw,
     playerTotal: playerHand.total,
+    playerIsSoft: playerHand.isSoft,
     dealerUpCard,
     betAmount: betMatch ? Number(betMatch[2].replace(/[,\.]/g, '')) : null,
     playerCards: playerHand.cards,
