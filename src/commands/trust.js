@@ -193,6 +193,10 @@ async function handleMessage(message, ctx) {
         opts.targetId = message.author.id;
       }
       const targetUser = await message.client.users.fetch(opts.targetId).catch(() => null);
+      if (targetUser?.bot) {
+        await message.reply('⛔ Este comando solo se puede usar con usuarios humanos, no con bots.');
+        return true;
+      }
       const target = {
         id: opts.targetId,
         mention: `<@${opts.targetId}>`,
@@ -245,6 +249,13 @@ async function handleInteraction(interaction, ctx) {
 
   if (sub === 'check') {
     const user = interaction.options.getUser('usuario') || interaction.user;
+    if (user.bot) {
+      await interaction.reply({
+        content: '⛔ Este comando solo se puede usar con usuarios humanos, no con bots.',
+        ephemeral: true,
+      });
+      return true;
+    }
     const target = {
       id: user.id,
       mention: `<@${user.id}>`,
@@ -259,6 +270,14 @@ async function handleInteraction(interaction, ctx) {
     const GASPY_ID = '684395420004253729';
     if (interaction.user.id !== GASPY_ID) {
       await interaction.reply({ content: '⛔ Este comando es exclusivo para the_gaspy_games.', ephemeral: true });
+      return true;
+    }
+
+    if (interaction.user.bot) {
+      await interaction.reply({
+        content: '⛔ Este comando solo se puede usar con usuarios humanos, no con bots.',
+        ephemeral: true,
+      });
       return true;
     }
 
