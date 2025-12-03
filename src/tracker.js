@@ -309,8 +309,9 @@ async function handleBlackjackEmbed(message, embed) {
 
   games.set(message.id, record);
 
-  if (playerId && state.playerTotal != null && state.dealerUpCard) {
-    await respondWithAdvice(message, state, playerId);
+  const playableState = record.lastPlayableState || state;
+  if (playerId && playableState.playerTotal != null && playableState.dealerUpCard) {
+    await respondWithAdvice(message, playableState, playerId);
   }
 
   const outcome = detectOutcome(embed);
@@ -354,8 +355,10 @@ async function handleBlackjackUpdate(message, embed) {
 
   const outcome = detectOutcome(embed);
 
-  if (!outcome && record.playerId && state.playerTotal != null && state.dealerUpCard) {
-    await respondWithAdvice(message, state, record.playerId);
+  const playableState = record.lastPlayableState || merged;
+
+  if (!outcome && record.playerId && playableState.playerTotal != null && playableState.dealerUpCard) {
+    await respondWithAdvice(message, playableState, record.playerId);
   }
 
   if (outcome) {

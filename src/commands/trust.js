@@ -71,7 +71,7 @@ function buildStatusEmbed(targetUser, info, { includeMiku } = {}) {
     { name: 'Rol de trust', value: isTrusted ? '✅ Sí (asistencias infinitas)' : '❌ No (usuario normal)', inline: true },
     {
       name: 'Asistencias usadas hoy',
-      value: isTrusted ? '∞ (modo Trust activo)' : `${info.user.assistsUsedToday} / ${DAILY_LIMIT}`,
+      value: isTrusted ? '♾️ / ♾️' : `${info.user.assistsUsedToday} / ${DAILY_LIMIT}`,
       inline: true,
     },
     {
