@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import { connectDb, closeDb } from './db.js';
 import { config } from './config.js';
-import { onMessageCreate, onMessageUpdate } from './tracker.js';
+import { onInteractionCreate, onMessageCreate, onMessageUpdate, registerSlashCommands } from './tracker.js';
 
 async function main() {
   await connectDb();
@@ -11,12 +11,14 @@ async function main() {
     partials: [Partials.Message, Partials.Channel],
   });
 
-  client.once('ready', () => {
+  client.once('ready', async () => {
     console.log(`[bot] Logged in as ${client.user.tag}`);
+    await registerSlashCommands(client);
   });
 
   client.on('messageCreate', onMessageCreate);
   client.on('messageUpdate', onMessageUpdate);
+  client.on('interactionCreate', onInteractionCreate);
 
   await client.login(config.token);
 
