@@ -5,6 +5,7 @@ import { buildStateMeta, mergeStates } from './utils/state.js';
 import { detectOutcome, isBlackjackEmbed, parseBlackjackState } from './utils/unbParse.js';
 import { commands, findCommandByName } from './commands/index.js';
 import { DAILY_LIMIT, checkAndConsumeAssist } from './utils/trust.js';
+import { getFlavorMessage } from './utils/flavor.js';
 import { getBasicAction } from './utils/basicStrategy.js';
 
 const games = new Map(); // messageId -> state
@@ -100,11 +101,12 @@ async function respondWithAdvice(message, state, playerId) {
     return message.channel.send(`<@${playerId}> No pude leer bien tu mano ahora mismo, intenta de nuevo en la siguiente actualización.`);
   }
   if (meta.playerTotal != null && meta.playerTotal > 21) {
-    return message.channel.send(`<@${playerId}> Ya estás en ${meta.playerTotal} (bust). Esa mano ya está decidida 💀`);
+    const flavor = getFlavorMessage(meta.playerTotal);
+    return message.channel.send(`<@${playerId}> Ya estás en ${meta.playerTotal} (bust). Esa mano ya está decidida 💀\n${flavor}`);
   }
 
-  const usage = await checkAndConsumeAssist(playerId);
-  if (!usage.allowed) {
+  const assistUsage = await checkAndConsumeAssist(playerId);
+  if (!assistUsage.allowed) {
     return message.channel.send(
       `⛔ Has usado tus ${DAILY_LIMIT} jugadas asistidas de hoy.\nEl entrenamiento sigue activo, pero no recibirás consejos automáticos hasta dentro de 24 horas.`
     );
@@ -120,17 +122,18 @@ async function respondWithAdvice(message, state, playerId) {
     const winPct = detail.plays ? ((detail.wins / detail.plays) * 100).toFixed(1) : '0.0';
     const tiePct = detail.plays ? ((detail.pushes / detail.plays) * 100).toFixed(1) : '0.0';
     return message.channel.send(
-      `<@${playerId}> Consejo: **${best.name.toUpperCase()}** (EV ${evLabel}, Win ${winPct}% | Tie ${tiePct}%, ${detail.plays} manos en este estado).`
+      `<@${playerId}> Consejo: **${best.name.toUpperCase()}** (EV ${evLabel}, Win ${winPct}% | Tie ${tiePct}%, ${detail.plays} manos en este estado).\n\n${getFlavorMessage(meta.playerTotal)}`
     );
   }
 
   const basic = getBasicAction(meta);
   if (basic === 'NONE') {
-    return message.channel.send(`<@${playerId}> Ya estás en ${meta.playerTotal} (bust). Esa mano ya está decidida 💀`);
+    const flavor = getFlavorMessage(meta.playerTotal);
+    return message.channel.send(`<@${playerId}> Ya estás en ${meta.playerTotal} (bust). Esa mano ya está decidida 💀\n${flavor}`);
   }
 
   return message.channel.send(
-    `<@${playerId}> Aún no tengo datos suficientes para este estado (${meta.stateKey}). Según estrategia básica, lo más razonable aquí es **${basic}**.`
+    `<@${playerId}> Aún no tengo datos suficientes para este estado (${meta.stateKey}). Según estrategia básica, lo más razonable aquí es **${basic}**.\n\n${getFlavorMessage(meta.playerTotal)}`
   );
 }
 
