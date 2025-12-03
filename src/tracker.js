@@ -1,10 +1,11 @@
 import { config } from './config.js';
 import { Hand } from './models/Hand.js';
-import { fetchStats, pickDecision } from './analysis.js';
+import { analyzeStateStats } from './analysis.js';
 import { buildStateMeta, mergeStates } from './utils/state.js';
 import { detectOutcome, isBlackjackEmbed, parseBlackjackState } from './utils/unbParse.js';
 import { commands, findCommandByName } from './commands/index.js';
 import { DAILY_LIMIT, checkAndConsumeAssist } from './utils/trust.js';
+import { getBasicAction } from './utils/basicStrategy.js';
 
 const games = new Map(); // messageId -> state
 const pendingCommands = new Map(); // channelId -> { playerId, at }
@@ -74,7 +75,17 @@ function extractMentionId(content) {
   return match ? match[1] : null;
 }
 
+const MIN_PLAYS_FOR_CONFIDENCE = 5;
+
 async function respondWithAdvice(message, state, playerId) {
+  const meta = buildStateMeta(state);
+  if (meta.playerTotal == null || !meta.dealerUpCard) {
+    return message.channel.send(`<@${playerId}> No pude leer bien tu mano ahora mismo, intenta de nuevo en la siguiente actualización.`);
+  }
+  if (meta.playerTotal != null && meta.playerTotal > 21) {
+    return message.channel.send(`<@${playerId}> Ya estás en ${meta.playerTotal} (bust). Esa mano ya está decidida 💀`);
+  }
+
   const usage = await checkAndConsumeAssist(playerId);
   if (!usage.allowed) {
     return message.channel.send(
@@ -82,20 +93,27 @@ async function respondWithAdvice(message, state, playerId) {
     );
   }
 
-  const stats = await fetchStats(state.playerTotal, state.dealerUpCard);
-  const choice = pickDecision(stats);
+  const analysis = await analyzeStateStats(meta);
+  const best = analysis.bestAction;
+  const hasStats = best && best.detail?.plays >= MIN_PLAYS_FOR_CONFIDENCE;
 
-  if (!choice.decision) {
+  if (hasStats) {
+    const detail = best.detail;
+    const evLabel = detail.ev >= 0 ? `+${detail.ev.toFixed(2)}` : detail.ev.toFixed(2);
+    const winPct = detail.plays ? ((detail.wins / detail.plays) * 100).toFixed(1) : '0.0';
+    const tiePct = detail.plays ? ((detail.pushes / detail.plays) * 100).toFixed(1) : '0.0';
     return message.channel.send(
-      `<@${playerId}> Aun no tengo datos para ${state.playerTotal} vs ${state.dealerUpCard}. Juega y aprenderemos.`
+      `<@${playerId}> Consejo: **${best.name.toUpperCase()}** (EV ${evLabel}, Win ${winPct}% | Tie ${tiePct}%, ${detail.plays} manos en este estado).`
     );
   }
 
-  const detail = choice.detail;
-  const winPct = (detail.winRate * 100).toFixed(1);
-  const tiePct = (detail.tieRate * 100).toFixed(1);
+  const basic = getBasicAction(meta);
+  if (basic === 'NONE') {
+    return message.channel.send(`<@${playerId}> Ya estás en ${meta.playerTotal} (bust). Esa mano ya está decidida 💀`);
+  }
+
   return message.channel.send(
-    `<@${playerId}> Consejo: **${choice.decision.toUpperCase()}** suele rendir mejor aqui. WinRate ${winPct}% | Tie ${tiePct}% | Muestras ${detail.plays}/${stats.totalSamples}.`
+    `<@${playerId}> Aún no tengo datos suficientes para este estado (${meta.stateKey}). Según estrategia básica, lo más razonable aquí es **${basic}**.`
   );
 }
 

@@ -1,4 +1,4 @@
-import { dealerCardValue, normalizeCardRank } from './state.js';
+import { dealerCardValue, normalizeCardRank, buildStateMeta } from './state.js';
 
 function pickByDealerRange(dealer, ranges) {
   for (const [test, action] of ranges) {
@@ -91,4 +91,55 @@ function finalizeAction(action, meta) {
     return meta.isSoft ? softStrategy(meta.playerTotal, dealerCardValue(meta.dealerUpCard), meta.canDouble) : hardStrategy(meta.playerTotal, dealerCardValue(meta.dealerUpCard), meta.canDouble);
   }
   return action;
+}
+
+export function getBasicAction(rawState = {}) {
+  const meta = rawState.stateKey ? rawState : buildStateMeta(rawState);
+  const dealerRank = normalizeCardRank(meta.dealerUpCard);
+  const dealer = dealerCardValue(dealerRank);
+  const total = meta.playerTotal ?? 0;
+  const canDouble = Boolean(meta.canDouble);
+  const canSplit = Boolean(meta.canSplit);
+  const isPair = Boolean(meta.isPair);
+  const isSoft = Boolean(meta.isSoft);
+  const pairRank = normalizeCardRank(meta.playerCards?.[0]);
+
+  if (total > 21) return 'NONE';
+  if (!dealer || !total) return 'HIT';
+
+  // Splits
+  if (isPair && canSplit && pairRank) {
+    if (pairRank === 'A' || pairRank === '8') return 'SPLIT';
+    if (pairRank === '5' || pairRank === '10' || pairRank === 'J' || pairRank === 'Q' || pairRank === 'K') {
+      // Treat as normal hand
+    }
+  }
+
+  // Soft hands
+  if (isSoft) {
+    if (total >= 19) return 'STAND';
+    if (total === 18) {
+      if (dealer >= 3 && dealer <= 6 && canDouble) return 'DOUBLE';
+      if (dealer === 2 || dealer === 7 || dealer === 8) return 'STAND';
+      return 'HIT';
+    }
+    if (total >= 13 && total <= 17) {
+      if (dealer === 5 || dealer === 6) {
+        return canDouble ? 'DOUBLE' : 'HIT';
+      }
+      return 'HIT';
+    }
+    return 'HIT';
+  }
+
+  // Hard hands
+  if (total >= 17) return 'STAND';
+  if (total === 16 || total === 15 || total === 14 || total === 13) return dealer >= 2 && dealer <= 6 ? 'STAND' : 'HIT';
+  if (total === 12) return dealer >= 4 && dealer <= 6 ? 'STAND' : 'HIT';
+  if (total === 11) return canDouble ? 'DOUBLE' : 'HIT';
+  if (total === 10) return canDouble && dealer >= 2 && dealer <= 9 ? 'DOUBLE' : 'HIT';
+  if (total === 9) return canDouble && dealer >= 3 && dealer <= 6 ? 'DOUBLE' : 'HIT';
+
+  // 5–8 default to HIT
+  return 'HIT';
 }
