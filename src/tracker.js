@@ -85,8 +85,35 @@ async function respondWithAdvice(message, state, playerId) {
   );
 }
 
+function findLatestGameByChannel(channelId, guildId) {
+  let latest = null;
+  for (const record of games.values()) {
+    if (record.channelId !== channelId) continue;
+    if (guildId && record.guildId !== guildId) continue;
+    if (!latest || (record.startedAt || 0) > (latest.startedAt || 0)) {
+      latest = record;
+    }
+  }
+  return latest;
+}
+
+function findActiveGameFor(playerId, guildId, channelId) {
+  let game = findActiveGame(playerId, guildId);
+  if (game) return game;
+
+  const byChannel = findLatestGameByChannel(channelId, guildId);
+  if (byChannel) {
+    if (!byChannel.playerId && playerId) {
+      byChannel.playerId = playerId;
+      games.set(byChannel.messageId, byChannel);
+    }
+    return byChannel;
+  }
+  return null;
+}
+
 const commandContext = {
-  findActiveGame,
+  findActiveGameFor,
   currentStateFromRecord,
   isAllowedUpdater,
   prefix: config.prefix || '.',

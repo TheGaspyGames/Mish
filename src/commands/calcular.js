@@ -45,8 +45,8 @@ function formatActionLine(action, detail) {
   return `- ${action.toUpperCase()} -> EV ${evLabel} | ${detail.plays} jugadas (${detail.wins}W / ${detail.losses}L / ${detail.pushes}P)`;
 }
 
-async function buildCalcResponse(playerId, guildId, options, ctx) {
-  const game = ctx.findActiveGame(playerId, guildId);
+async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
+  const game = ctx.findActiveGameFor(playerId, guildId, channelId);
   if (!game) {
     return { ok: false, message: 'No veo una ronda activa tuya de blackjack ahora mismo.' };
   }
@@ -101,7 +101,7 @@ async function buildCalcResponse(playerId, guildId, options, ctx) {
 
 async function handleMessage(message, ctx) {
   const options = parseCalcOptions(message.content || '', ctx.prefix);
-  const response = await buildCalcResponse(message.author.id, message.guildId, options, ctx);
+  const response = await buildCalcResponse(message.author.id, message.guildId, message.channelId, options, ctx);
   await message.reply(response.message);
   return true;
 }
@@ -112,7 +112,13 @@ async function handleInteraction(interaction, ctx) {
     base: interaction.options.getBoolean('base'),
   };
   if (options.base === undefined || options.base === null) options.base = true;
-  const response = await buildCalcResponse(interaction.user.id, interaction.guildId, options, ctx);
+  const response = await buildCalcResponse(
+    interaction.user.id,
+    interaction.guildId,
+    interaction.channelId,
+    options,
+    ctx
+  );
   await interaction.reply({ content: response.message, ephemeral: false });
   return true;
 }
