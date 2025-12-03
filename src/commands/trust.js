@@ -1,4 +1,4 @@
-import { ApplicationCommandOptionType } from 'discord.js';
+import { ApplicationCommandOptionType, EmbedBuilder } from 'discord.js';
 import {
   DAILY_LIMIT,
   generateKeys,
@@ -48,27 +48,50 @@ function formatDate(date) {
   return d.toLocaleString('es-ES');
 }
 
-function buildStatusEmbed(userLabel, avatarUrl, info) {
-  const isTrusted = info.user.hasTrust;
-  const color = isTrusted ? 0x2ecc71 : 0xed4245;
-  const fields = [
-    { name: 'Trust activo', value: isTrusted ? 'Sí (asistencias infinitas)' : 'No (10 por día)', inline: true },
-    { name: 'Usadas hoy', value: isTrusted ? 'Ilimitadas' : `${info.user.assistsUsedToday} / ${DAILY_LIMIT}`, inline: true },
-    { name: 'Total históricas', value: `${info.user.totalAssistsUsed}`, inline: true },
-    { name: 'Último reset', value: formatDate(info.user.lastResetAt), inline: false },
-  ];
-  const description = info.resetPerformed
-    ? 'Se aplicó el reset de 24h antes de mostrar este estado.'
-    : 'Estado actual del usuario en el sistema trust.';
+function formatDiscordTimestamp(date) {
+  if (!date) return 'N/D';
+  const seconds = Math.floor(new Date(date).getTime() / 1000);
+  return `<t:${seconds}:f>`;
+}
 
-  return {
-    title: 'Estado Trust',
-    description,
-    color,
-    thumbnail: avatarUrl ? { url: avatarUrl } : undefined,
-    fields,
-    footer: { text: userLabel },
-  };
+function buildStatusEmbed(targetUser, info, viewerIsOwner) {
+  const isTrusted = info.user.hasTrust;
+  const color = isTrusted ? 0x1abc9c : 0xf1c40f;
+  const embed = new EmbedBuilder()
+    .setTitle(viewerIsOwner ? '📊 Estado de Trust – OWNER VIEW' : '📊 Estado de Trust')
+    .setColor(color)
+    .setThumbnail(targetUser?.avatarURL ?? null);
+
+  if (info.resetPerformed) {
+    embed.setDescription('Se aplicó el reset de 24h antes de mostrar este estado.');
+  }
+
+  if (viewerIsOwner) {
+    embed.setFooter({ text: 'Powered by Hatsune Miku, patrona del RNG. 🎶' });
+    embed.addFields({
+      name: 'OWNER',
+      value: '👑 Eres el dueño absoluto del Gambler Helper.\n🎤 Bendecido por la diosa virtual Hatsune Miku.',
+      inline: false,
+    });
+  }
+
+  embed.addFields(
+    { name: 'Usuario', value: `${targetUser?.mention ?? 'N/D'} (${targetUser?.id ?? 'N/D'})`, inline: false },
+    { name: 'Rol de trust', value: isTrusted ? '✅ Sí (asistencias infinitas)' : '❌ No (usuario normal)', inline: true },
+    {
+      name: 'Asistencias usadas hoy',
+      value: isTrusted ? '∞ (modo Trust activo)' : `${info.user.assistsUsedToday} / ${DAILY_LIMIT}`,
+      inline: true,
+    },
+    {
+      name: 'Último reset diario',
+      value: isTrusted ? 'No aplica (Trust activo)' : formatDiscordTimestamp(info.user.lastResetAt),
+      inline: false,
+    },
+    { name: 'Asistencias históricas totales', value: `${info.user.totalAssistsUsed}`, inline: false }
+  );
+
+  return embed;
 }
 
 async function handleRedeem(userId, key) {
@@ -171,10 +194,14 @@ async function handleMessage(message, ctx) {
         return true;
       }
       const targetUser = await message.client.users.fetch(opts.targetId).catch(() => null);
-      const targetTag = targetUser ? targetUser.tag : `<@${opts.targetId}>`;
-      const avatar = targetUser?.displayAvatarURL?.({ size: 256 });
-      const status = await handleCheck(opts.targetId, targetTag);
-      await message.reply({ embeds: [buildStatusEmbed(targetTag, avatar, status)] });
+      const target = {
+        id: opts.targetId,
+        mention: `<@${opts.targetId}>`,
+        avatarURL: targetUser?.displayAvatarURL({ size: 256 }),
+      };
+      const status = await handleCheck(opts.targetId, targetUser?.tag || target.mention);
+      const viewerIsOwner = requireOwner(ctx, message.author?.id);
+      await message.reply({ embeds: [buildStatusEmbed(target, status, viewerIsOwner)] });
       return true;
     }
     case 'reset': {
@@ -224,9 +251,14 @@ async function handleInteraction(interaction, ctx) {
       await interaction.reply({ content: 'Solo el owner puede consultar a otros usuarios.', ephemeral: true });
       return true;
     }
+    const target = {
+      id: user.id,
+      mention: `<@${user.id}>`,
+      avatarURL: user.displayAvatarURL({ size: 256 }),
+    };
     const status = await handleCheck(user.id, user.tag);
-    const avatar = user.displayAvatarURL({ size: 256 });
-    await interaction.reply({ embeds: [buildStatusEmbed(user.tag, avatar, status)], ephemeral: true });
+    const viewerIsOwner = requireOwner(ctx, interaction.user?.id);
+    await interaction.reply({ embeds: [buildStatusEmbed(target, status, viewerIsOwner)], ephemeral: true });
     return true;
   }
 
