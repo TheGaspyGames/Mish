@@ -2,6 +2,7 @@ import { ApplicationCommandOptionType } from 'discord.js';
 import { analyzeStateStats } from '../analysis.js';
 import { basicStrategy } from '../utils/basicStrategy.js';
 import { buildStateMeta, describeState } from '../utils/state.js';
+import { DAILY_LIMIT, checkAndConsumeAssist } from '../utils/trust.js';
 import { makeCommandRegex, parseBool } from './utils.js';
 
 const MIN_STATE_SAMPLES = 10;
@@ -57,6 +58,17 @@ async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
   }
   if (stateMeta.playerTotal > 21) {
     return { ok: false, embed: { description: `Ya estás en ${stateMeta.playerTotal} (bust). Esa mano ya está decidida 💀`, color: 0xed4245 } };
+  }
+
+  const usage = await checkAndConsumeAssist(playerId);
+  if (!usage.allowed) {
+    return {
+      ok: false,
+      embed: {
+        description: `⛔ Has usado tus ${DAILY_LIMIT} jugadas asistidas de hoy.\nEl entrenamiento sigue activo, pero no recibirás consejos automáticos hasta dentro de 24 horas.`,
+        color: 0xed4245,
+      },
+    };
   }
   const analysis = await analyzeStateStats(state);
   const best = analysis.bestAction;

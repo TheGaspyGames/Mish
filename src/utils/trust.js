@@ -48,6 +48,9 @@ export async function checkAndConsumeAssist(userId) {
   }
 
   if (user.hasTrust) {
+    if (user.assistsUsedToday !== 0) {
+      user.assistsUsedToday = 0;
+    }
     user.totalAssistsUsed += 1;
     await user.save();
     return { allowed: true, reason: 'trusted', user, created, resetPerformed };
