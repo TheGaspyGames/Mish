@@ -36,6 +36,7 @@ function extractHand(lines, marker) {
     const line = lines[i];
     if (/^value/i.test(line)) break;
     if (line.toLowerCase().includes('value')) break;
+    if (line.toLowerCase().includes('result')) break;
     const ranks = extractRanksFromLine(line);
     cards.push(...ranks);
     // stop if the line had any ranks to avoid reading further text
@@ -45,6 +46,8 @@ function extractHand(lines, marker) {
   let total = null;
   for (let i = idx + 1; i < Math.min(lines.length, idx + 5); i++) {
     const valLine = lines[i];
+    const lower = valLine.toLowerCase();
+    if (lower.includes('result') || lower.includes('payout')) break;
     const m = valLine.match(/value:\s*([0-9]{1,2})/i);
     if (m) {
       total = Number(m[1]);

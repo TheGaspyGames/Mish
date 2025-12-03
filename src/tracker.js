@@ -11,9 +11,16 @@ const games = new Map(); // messageId -> state
 const pendingCommands = new Map(); // channelId -> { playerId, at }
 
 const COMMAND_WINDOW_MS = 2 * 60 * 1000;
+const FINISHED_TTL_MS = 5 * 60 * 1000;
 
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isStaleFinished(record) {
+  if (!record?.finished) return false;
+  if (!record.finishedAt) return false;
+  return Date.now() - record.finishedAt > FINISHED_TTL_MS;
 }
 
 function isBlackjackCommand(content) {
@@ -37,6 +44,11 @@ function isTrustOwner(userId) {
 function findActiveGame(playerId, guildId) {
   let latest = null;
   for (const record of games.values()) {
+    if (isStaleFinished(record)) {
+      games.delete(record.messageId);
+      continue;
+    }
+    if (record.finished) continue;
     if (!record.playerId || record.playerId !== playerId) continue;
     if (guildId && record.guildId !== guildId) continue;
     if (!latest || (record.startedAt || 0) > (latest.startedAt || 0)) {
@@ -49,16 +61,21 @@ function findActiveGame(playerId, guildId) {
 function currentStateFromRecord(record) {
   if (!record) return {};
   const snapshot = record.stateSnapshot || {};
+  const lastPlayable = record.lastPlayableState || {};
+  const source = lastPlayable.playerTotal != null && lastPlayable.dealerUpCard ? lastPlayable : snapshot;
+
   return {
-    playerTotal: snapshot.playerTotal ?? record.lastTotal ?? record.initialHand?.total ?? null,
-    dealerUpCard: snapshot.dealerUpCard ?? record.dealerCard,
+    playerTotal: source.playerTotal ?? record.lastTotal ?? record.initialHand?.total ?? null,
+    dealerUpCard: source.dealerUpCard ?? record.dealerCard,
     playerCards:
-      Array.isArray(snapshot.playerCards) && snapshot.playerCards.length
-        ? snapshot.playerCards
-        : record.initialHand?.cards,
-    betAmount: snapshot.betAmount ?? record.lastBet,
-    canDouble: snapshot.canDouble,
-    canSplit: snapshot.canSplit,
+      Array.isArray(source.playerCards) && source.playerCards.length
+        ? source.playerCards
+        : Array.isArray(snapshot.playerCards) && snapshot.playerCards.length
+          ? snapshot.playerCards
+          : record.initialHand?.cards,
+    betAmount: source.betAmount ?? record.lastBet ?? snapshot.betAmount,
+    canDouble: source.canDouble ?? snapshot.canDouble,
+    canSplit: source.canSplit ?? snapshot.canSplit,
   };
 }
 
@@ -117,9 +134,14 @@ async function respondWithAdvice(message, state, playerId) {
   );
 }
 
-function findLatestGameByChannel(channelId, guildId) {
+function findLatestGameByChannel(channelId, guildId, includeFinished = false) {
   let latest = null;
   for (const record of games.values()) {
+    if (isStaleFinished(record)) {
+      games.delete(record.messageId);
+      continue;
+    }
+    if (!includeFinished && record.finished) continue;
     if (record.channelId !== channelId) continue;
     if (guildId && record.guildId !== guildId) continue;
     if (!latest || (record.startedAt || 0) > (latest.startedAt || 0)) {
@@ -130,17 +152,32 @@ function findLatestGameByChannel(channelId, guildId) {
 }
 
 function findActiveGameFor(playerId, guildId, channelId) {
-  let game = findActiveGame(playerId, guildId);
+  const byPlayer = findActiveGame(playerId, guildId);
+  const byChannelAny = findLatestGameByChannel(channelId, guildId, true);
+  const byChannel = byChannelAny && !byChannelAny.finished ? byChannelAny : null;
+
+  let game = null;
+  if (byPlayer && byChannel) {
+    game = (byChannel.startedAt || 0) >= (byPlayer.startedAt || 0) ? byChannel : byPlayer;
+  } else {
+    game = byPlayer || byChannel;
+  }
+
+  if (game && !game.playerId && playerId) {
+    game.playerId = playerId;
+    games.set(game.messageId, game);
+  }
+
   if (game) return game;
 
-  const byChannel = findLatestGameByChannel(channelId, guildId);
-  if (byChannel) {
-    if (!byChannel.playerId && playerId) {
-      byChannel.playerId = playerId;
-      games.set(byChannel.messageId, byChannel);
+  if (byChannelAny) {
+    if (!byChannelAny.playerId && playerId) {
+      byChannelAny.playerId = playerId;
+      games.set(byChannelAny.messageId, byChannelAny);
     }
-    return byChannel;
+    return byChannelAny;
   }
+
   return null;
 }
 
@@ -254,6 +291,8 @@ async function handleBlackjackEmbed(message, embed) {
     channelId: message.channelId,
     messageId: message.id,
     startedAt: Date.now(),
+    finished: false,
+    finishedAt: null,
     initialHand: {
       cards: state.playerCards,
       total: state.playerTotal,
@@ -262,6 +301,8 @@ async function handleBlackjackEmbed(message, embed) {
     lastTotal: state.playerTotal,
     lastBet: state.betAmount,
     pendingDecision: null,
+    lastPlayableState:
+      state.playerTotal != null && state.dealerUpCard ? mergeStates({}, state) : {},
     stateSnapshot: mergeStates({}, state),
     decisionState: mergeStates({}, state),
   };
@@ -287,7 +328,7 @@ async function handleBlackjackUpdate(message, embed) {
     await handleBlackjackEmbed(message, embed);
     record = games.get(message.id);
   }
-  if (!record) return;
+  if (!record || record.finished) return;
 
   const previousState = record.stateSnapshot || {};
   let decision = null;
@@ -304,7 +345,11 @@ async function handleBlackjackUpdate(message, embed) {
 
   record.lastTotal = state.playerTotal ?? record.lastTotal;
   record.lastBet = state.betAmount ?? record.lastBet;
-  record.stateSnapshot = mergeStates(previousState, state);
+  const merged = mergeStates(previousState, state);
+  record.stateSnapshot = merged;
+  if (merged.playerTotal != null && merged.dealerUpCard) {
+    record.lastPlayableState = merged;
+  }
   games.set(message.id, record);
 
   const outcome = detectOutcome(embed);
@@ -324,7 +369,11 @@ async function handleBlackjackUpdate(message, embed) {
 
 async function persistAndClear(messageId, outcome, decision) {
   const record = games.get(messageId);
-  if (!record || !record.playerId) {
+  if (!record || record.finished) {
+    games.delete(messageId);
+    return;
+  }
+  if (!record.playerId) {
     games.delete(messageId);
     return;
   }
@@ -357,5 +406,9 @@ async function persistAndClear(messageId, outcome, decision) {
     },
   });
 
-  games.delete(messageId);
+  record.finished = true;
+  record.finishedAt = Date.now();
+  record.outcome = outcome;
+  record.finalDecision = decision;
+  games.set(messageId, record);
 }
