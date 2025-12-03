@@ -21,12 +21,7 @@ function parseCalcOptions(content, prefix) {
   if (!content) return opts;
   const parts = content.trim().split(/\s+/);
   if (parts.length) {
-    const first = parts[0];
-    if (getRegex(prefix).test(first)) {
-      parts.shift();
-    } else {
-      parts.shift();
-    }
+    parts.shift(); // drop command token
   }
   for (const token of parts) {
     const [rawKey, rawVal] = token.split(/[:=]/);
@@ -42,13 +37,13 @@ function parseCalcOptions(content, prefix) {
 
 function formatActionLine(action, detail) {
   const evLabel = detail.ev >= 0 ? `+${detail.ev.toFixed(2)}` : detail.ev.toFixed(2);
-  return `- ${action.toUpperCase()} -> EV ${evLabel} | ${detail.plays} jugadas (${detail.wins}W / ${detail.losses}L / ${detail.pushes}P)`;
+  return `• ${action.toUpperCase()} -> EV ${evLabel} | ${detail.plays} jugadas (${detail.wins}W / ${detail.losses}L / ${detail.pushes}P)`;
 }
 
 async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
   const game = ctx.findActiveGameFor(playerId, guildId, channelId);
   if (!game) {
-    return { ok: false, message: 'No veo una ronda activa tuya de blackjack ahora mismo.' };
+    return { ok: false, embed: { description: 'No veo una ronda activa tuya de blackjack ahora mismo.', color: 0xed4245 } };
   }
 
   const state = ctx.currentStateFromRecord(game);
@@ -57,52 +52,52 @@ async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
   const best = analysis.bestAction;
   const actions = Object.entries(analysis.actions).sort((a, b) => b[1].plays - a[1].plays);
 
-  const lines = [];
-  lines.push('📟 /calcular - Analisis de jugadas similares');
-  lines.push(`Estado detectado: ${describeState(stateMeta)}`);
-  if (options.detallado) {
-    lines.push(`StateKey: ${stateMeta.stateKey}`);
-  }
-  lines.push(`Coincidencias: ${analysis.totalPlays}`);
-
-  if (actions.length) {
-    lines.push('Acciones registradas:');
-    for (const [action, detail] of actions) {
-      lines.push(formatActionLine(action, detail));
-    }
-  } else {
-    lines.push('Sin datos aprendidos para este estado.');
-  }
-
   const basic = basicStrategy(stateMeta);
   const hasData = analysis.totalPlays >= MIN_STATE_SAMPLES && best;
   const confident = best && best.detail.plays >= CONFIDENT_ACTION_SAMPLES;
 
+  let recommendation = 'No hay suficientes datos para recomendar accion con confianza.';
   if (hasData && (confident || !options.base)) {
     const evLabel = best.detail.ev >= 0 ? `+${best.detail.ev.toFixed(2)}` : best.detail.ev.toFixed(2);
-    lines.push(`Recomendacion: ${best.name.toUpperCase()} (EV ${evLabel} con ${best.detail.plays} manos).`);
+    recommendation = `Recomendacion: **${best.name.toUpperCase()}** (EV ${evLabel} con ${best.detail.plays} manos).`;
     if (!confident && options.base) {
-      lines.push('Nota: datos limitados, se omite estrategia basica por tu solicitud.');
+      recommendation += '\nNota: datos limitados, se omite estrategia basica por tu solicitud.';
     }
   } else if (hasData && basic && options.base && !confident) {
-    lines.push(
-      `Datos reales limitados (${best?.detail.plays ?? 0} muestras en la mejor accion). Estrategia basica: ${basic.toUpperCase()}.`
-    );
+    recommendation = `Datos reales limitados (${best?.detail.plays ?? 0} muestras en la mejor accion). Estrategia basica: **${basic.toUpperCase()}**.`;
   } else if (options.base && basic) {
-    lines.push(
-      `No hay suficientes datos reales (min ${MIN_STATE_SAMPLES}). Estrategia basica: ${basic.toUpperCase()}.`
-    );
-  } else {
-    lines.push('No hay suficientes datos para recomendar accion con confianza.');
+    recommendation = `No hay suficientes datos reales (min ${MIN_STATE_SAMPLES}). Estrategia basica: **${basic.toUpperCase()}**.`;
   }
 
-  return { ok: true, message: lines.join('\n') };
+  const actionLines = actions.length
+    ? actions.map(([action, detail]) => formatActionLine(action, detail)).join('\n')
+    : 'Sin datos aprendidos para este estado.';
+
+  const embed = {
+    title: '📟 /calcular',
+    description: `Estado detectado: ${describeState(stateMeta)}\nCoincidencias: ${analysis.totalPlays}`,
+    color: 0x5865f2,
+    fields: [
+      { name: 'Acciones registradas', value: actionLines },
+      { name: 'Recomendacion', value: recommendation },
+    ],
+  };
+
+  if (options.detallado) {
+    embed.fields.push({ name: 'StateKey', value: stateMeta.stateKey });
+  }
+
+  return { ok: true, embed };
 }
 
 async function handleMessage(message, ctx) {
   const options = parseCalcOptions(message.content || '', ctx.prefix);
   const response = await buildCalcResponse(message.author.id, message.guildId, message.channelId, options, ctx);
-  await message.reply(response.message);
+  if (response.embed) {
+    await message.reply({ embeds: [response.embed] });
+  } else {
+    await message.reply(response.message);
+  }
   return true;
 }
 
@@ -119,7 +114,11 @@ async function handleInteraction(interaction, ctx) {
     options,
     ctx
   );
-  await interaction.reply({ content: response.message, ephemeral: false });
+  if (response.embed) {
+    await interaction.reply({ embeds: [response.embed], ephemeral: false });
+  } else {
+    await interaction.reply({ content: response.message, ephemeral: false });
+  }
   return true;
 }
 

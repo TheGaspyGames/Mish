@@ -207,7 +207,7 @@ export async function registerSlashCommands(client) {
 async function handleBlackjackEmbed(message, embed) {
   cleanupPending(message.channelId);
 
-  const state = parseBlackjackState(embed);
+  const state = parseBlackjackState(embed, message);
   const mentionId = extractMentionId(message.content);
   const pending = pendingCommands.get(message.channelId);
   const playerId = mentionId || pending?.playerId || null;
@@ -246,7 +246,7 @@ async function handleBlackjackEmbed(message, embed) {
 }
 
 async function handleBlackjackUpdate(message, embed) {
-  const state = parseBlackjackState(embed);
+  const state = parseBlackjackState(embed, message);
   let record = games.get(message.id);
 
   // If we never saw the original message (e.g., bot restarted), treat this as new

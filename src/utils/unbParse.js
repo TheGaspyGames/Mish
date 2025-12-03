@@ -64,7 +64,25 @@ export function isBlackjackEmbed(embed) {
   return txt.includes('blackjack') || txt.includes('your hand') || txt.includes('dealer hand');
 }
 
-export function parseBlackjackState(embed) {
+function extractActionsFromMessage(message) {
+  if (!message?.components) return {};
+  let canDouble = false;
+  let canSplit = false;
+  for (const row of message.components) {
+    for (const comp of row.components || []) {
+      const label = (comp.label || '').toLowerCase();
+      if (label.includes('double')) {
+        canDouble = !comp.disabled;
+      }
+      if (label.includes('split')) {
+        canSplit = !comp.disabled;
+      }
+    }
+  }
+  return { canDouble, canSplit };
+}
+
+export function parseBlackjackState(embed, message) {
   const raw = embedText(embed);
   const lines = raw
     .split('\n')
@@ -79,6 +97,7 @@ export function parseBlackjackState(embed) {
   const betMatch = lower.match(/(bet|apuesta)[^0-9]*([0-9][0-9,\.]*)/);
 
   const dealerUpCard = dealerHand.cards[0] || (dealerMatch ? dealerMatch[1].toUpperCase() : null);
+  const actions = extractActionsFromMessage(message);
 
   return {
     raw,
@@ -86,6 +105,8 @@ export function parseBlackjackState(embed) {
     dealerUpCard,
     betAmount: betMatch ? Number(betMatch[2].replace(/[,\.]/g, '')) : null,
     playerCards: playerHand.cards,
+    canDouble: actions.canDouble,
+    canSplit: actions.canSplit,
   };
 }
 
