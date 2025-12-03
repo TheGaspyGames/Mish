@@ -290,6 +290,11 @@ async function handleBlackjackUpdate(message, embed) {
   games.set(message.id, record);
 
   const outcome = detectOutcome(embed);
+
+  if (!outcome && record.playerId && state.playerTotal != null && state.dealerUpCard) {
+    await respondWithAdvice(message, state, record.playerId);
+  }
+
   if (outcome) {
     if (!record.decisionState) {
       record.decisionState = mergeStates({}, record.stateSnapshot);
