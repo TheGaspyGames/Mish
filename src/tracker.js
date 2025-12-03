@@ -23,16 +23,20 @@ function isBlackjackCommand(content) {
   return pattern.test(content);
 }
 
+function makeCommandRegex(name) {
+  const prefix = escapeRegExp(config.prefix || '.');
+  return new RegExp(`^\\s*(?:\\/|${prefix}|<@!?\\d+>\\s*)?${name}\\b`, 'i');
+}
+
+const calcRegex = makeCommandRegex('calcular');
+const updateRegex = makeCommandRegex('update');
+
 function isCalcCommand(content) {
-  if (!content) return false;
-  const pattern = new RegExp(`^\\s*(?:\\/|${escapeRegExp(config.prefix)})calcular\\b`, 'i');
-  return pattern.test(content);
+  return Boolean(content && calcRegex.test(content));
 }
 
 function isUpdateCommand(content) {
-  if (!content) return false;
-  const pattern = new RegExp(`^\\s*(?:\\/|${escapeRegExp(config.prefix)})update\\b`, 'i');
-  return pattern.test(content);
+  return Boolean(content && updateRegex.test(content));
 }
 
 function parseBool(value, fallback) {
