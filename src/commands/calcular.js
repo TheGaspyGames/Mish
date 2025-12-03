@@ -65,19 +65,8 @@ async function buildCalcResponse(playerId, guildId, channelId, options, ctx) {
     };
   }
 
-  const usage = await checkAndConsumeAssist(playerId);
-  if (!usage.allowed) {
-    return {
-      ok: false,
-      embed: {
-        description: `⛔ Has usado tus ${DAILY_LIMIT} jugadas asistidas de hoy.\nEl entrenamiento sigue activo, pero no recibirás consejos automáticos hasta dentro de 24 horas.`,
-        color: 0xed4245,
-      },
-    };
-  }
-
-  const usage = await checkAndConsumeAssist(playerId);
-  if (!usage.allowed) {
+  const assistUsage = await checkAndConsumeAssist(playerId);
+  if (!assistUsage.allowed) {
     return {
       ok: false,
       embed: {

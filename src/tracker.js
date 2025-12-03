@@ -105,8 +105,8 @@ async function respondWithAdvice(message, state, playerId) {
     return message.channel.send(`<@${playerId}> Ya estás en ${meta.playerTotal} (bust). Esa mano ya está decidida 💀\n${flavor}`);
   }
 
-  const usage = await checkAndConsumeAssist(playerId);
-  if (!usage.allowed) {
+  const assistUsage = await checkAndConsumeAssist(playerId);
+  if (!assistUsage.allowed) {
     return message.channel.send(
       `⛔ Has usado tus ${DAILY_LIMIT} jugadas asistidas de hoy.\nEl entrenamiento sigue activo, pero no recibirás consejos automáticos hasta dentro de 24 horas.`
     );
