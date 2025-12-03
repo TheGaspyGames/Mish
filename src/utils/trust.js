@@ -10,22 +10,17 @@ function normalizeKey(value) {
 }
 
 function generateKeyValue() {
-  const raw = crypto.randomBytes(8).toString('base64url').toUpperCase();
+  const raw = crypto.randomBytes(10).toString('base64url').toUpperCase();
   return raw.replace(/[^A-Z0-9]/g, '').slice(0, 16);
 }
 
-async function applyDailyReset(user, now) {
+function shouldReset(user, now) {
   if (user.hasTrust) return false;
-  const lastReset = user.lastResetAt ? new Date(user.lastResetAt).getTime() : 0;
-  if (!lastReset || now.getTime() - lastReset >= RESET_WINDOW_MS) {
-    user.assistsUsedToday = 0;
-    user.lastResetAt = now;
-    return true;
-  }
-  return false;
+  const last = user.lastResetAt ? new Date(user.lastResetAt).getTime() : 0;
+  return !last || now.getTime() - last >= RESET_WINDOW_MS;
 }
 
-async function getOrCreateUser(userId, now) {
+async function getOrCreateUser(userId, now = new Date()) {
   let user = await TrustUser.findOne({ userId });
   let created = false;
   if (!user) {
@@ -41,40 +36,43 @@ async function getOrCreateUser(userId, now) {
   return { user, created };
 }
 
-export async function consumeAssist(userId) {
+export async function checkAndConsumeAssist(userId) {
   const now = new Date();
   const { user, created } = await getOrCreateUser(userId, now);
-  const resetPerformed = await applyDailyReset(user, now);
+  let resetPerformed = false;
 
-  if (!user.hasTrust && user.assistsUsedToday >= DAILY_LIMIT) {
+  if (shouldReset(user, now)) {
+    user.assistsUsedToday = 0;
+    user.lastResetAt = now;
+    resetPerformed = true;
+  }
+
+  if (user.hasTrust) {
+    user.totalAssistsUsed += 1;
+    await user.save();
+    return { allowed: true, reason: 'trusted', user, created, resetPerformed };
+  }
+
+  if (user.assistsUsedToday >= DAILY_LIMIT) {
     if (resetPerformed) {
       await user.save();
     }
-    return { allowed: false, user, created, resetPerformed };
+    return { allowed: false, reason: 'limit', user, created, resetPerformed };
   }
 
-  if (!user.hasTrust) {
-    user.assistsUsedToday += 1;
-  }
+  user.assistsUsedToday += 1;
   user.totalAssistsUsed += 1;
   await user.save();
-
-  return { allowed: true, user, created, resetPerformed };
+  return { allowed: true, reason: 'normal', user, created, resetPerformed };
 }
 
 export async function redeemTrustKey(userId, keyValue) {
   const key = normalizeKey(keyValue);
-  if (!key) {
-    return { status: 'invalid' };
-  }
+  if (!key) return { status: 'invalid' };
 
   const keyDoc = await TrustKey.findOne({ key });
-  if (!keyDoc) {
-    return { status: 'invalid' };
-  }
-  if (keyDoc.used) {
-    return { status: 'used', key: keyDoc };
-  }
+  if (!keyDoc) return { status: 'invalid' };
+  if (keyDoc.used) return { status: 'used', key: keyDoc };
 
   const now = new Date();
   keyDoc.used = true;
@@ -84,15 +82,17 @@ export async function redeemTrustKey(userId, keyValue) {
 
   const { user, created } = await getOrCreateUser(userId, now);
   user.hasTrust = true;
+  user.assistsUsedToday = 0;
+  user.lastResetAt = now;
   await user.save();
 
   return { status: 'ok', key: keyDoc, user, created };
 }
 
-export async function generateTrustKeys(ownerId, amount) {
-  const count = Math.max(0, Math.min(Number(amount) || 0, 1000));
+export async function generateKeys(count, ownerId) {
+  const target = Math.max(0, Math.min(Number(count) || 0, 500));
   const created = [];
-  while (created.length < count) {
+  while (created.length < target) {
     const keyValue = generateKeyValue();
     try {
       const doc = await TrustKey.create({
@@ -122,15 +122,15 @@ export async function getKeysSummary() {
   };
 }
 
-export async function getUserStatus(userId, { resetIfNeeded = false } = {}) {
+export async function getTrustStatus(userId, { resetIfNeeded = false } = {}) {
   const now = new Date();
   const { user, created } = await getOrCreateUser(userId, now);
   let resetPerformed = false;
-  if (resetIfNeeded) {
-    resetPerformed = await applyDailyReset(user, now);
-    if (resetPerformed) {
-      await user.save();
-    }
+  if (resetIfNeeded && shouldReset(user, now)) {
+    user.assistsUsedToday = 0;
+    user.lastResetAt = now;
+    resetPerformed = true;
+    await user.save();
   }
   return { user, created, resetPerformed };
 }

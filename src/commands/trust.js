@@ -1,9 +1,9 @@
 import { ApplicationCommandOptionType } from 'discord.js';
 import {
   DAILY_LIMIT,
-  generateTrustKeys,
+  generateKeys,
   getKeysSummary,
-  getUserStatus,
+  getTrustStatus,
   redeemTrustKey,
   resetNormalUser,
 } from '../utils/trust.js';
@@ -32,20 +32,13 @@ function parseMessageOptions(content, prefix) {
   if (tokens.length) tokens.shift(); // remove command token
   const primary = (tokens.shift() || '').toLowerCase();
 
-  if (primary === 'generate') {
-    return { action: 'generate', amount: Number(tokens[0]) || 1 };
-  }
-  if (primary === 'keys') {
-    return { action: 'keys' };
-  }
-  if (primary === 'check') {
-    return { action: 'check', targetId: normalizeUserId(tokens[0]) };
-  }
-  if (primary === 'resetuser') {
-    return { action: 'reset', targetId: normalizeUserId(tokens[0]) };
-  }
+  if (primary === 'generate') return { action: 'generate', amount: Number(tokens[0]) || 1 };
+  if (primary === 'keys') return { action: 'keys' };
+  if (primary === 'check') return { action: 'check', targetId: normalizeUserId(tokens[0]) };
+  if (primary === 'resetuser') return { action: 'reset', targetId: normalizeUserId(tokens[0]) };
+  if (primary === 'redeem') return { action: 'redeem', key: tokens[0] };
 
-  const keyInput = primary || tokens[0] || null;
+  const keyInput = primary || tokens[0] || null; // fallback for ".trust <clave>"
   return { action: 'redeem', key: keyInput };
 }
 
@@ -55,21 +48,27 @@ function formatDate(date) {
   return d.toLocaleString('es-ES');
 }
 
-function formatUserReport(targetTag, info) {
-  const lines = [];
-  lines.push(`📊 ${targetTag}:`);
-  lines.push(`- Trust activo: ${info.user.hasTrust ? 'Si' : 'No'}`);
-  if (info.user.hasTrust) {
-    lines.push('- Asistencias usadas hoy: Ilimitadas');
-  } else {
-    lines.push(`- Asistencias usadas hoy: ${info.user.assistsUsedToday} / ${DAILY_LIMIT}`);
-  }
-  lines.push(`- Ultimo reset: ${formatDate(info.user.lastResetAt)}`);
-  lines.push(`- Total asistencias historicas: ${info.user.totalAssistsUsed}`);
-  if (info.resetPerformed) {
-    lines.push('(Se aplico reset por ventana de 24h)');
-  }
-  return lines.join('\n');
+function buildStatusEmbed(userLabel, avatarUrl, info) {
+  const isTrusted = info.user.hasTrust;
+  const color = isTrusted ? 0x2ecc71 : 0xed4245;
+  const fields = [
+    { name: 'Trust activo', value: isTrusted ? 'Sí (asistencias infinitas)' : 'No (10 por día)', inline: true },
+    { name: 'Usadas hoy', value: isTrusted ? 'Ilimitadas' : `${info.user.assistsUsedToday} / ${DAILY_LIMIT}`, inline: true },
+    { name: 'Total históricas', value: `${info.user.totalAssistsUsed}`, inline: true },
+    { name: 'Último reset', value: formatDate(info.user.lastResetAt), inline: false },
+  ];
+  const description = info.resetPerformed
+    ? 'Se aplicó el reset de 24h antes de mostrar este estado.'
+    : 'Estado actual del usuario en el sistema trust.';
+
+  return {
+    title: 'Estado Trust',
+    description,
+    color,
+    thumbnail: avatarUrl ? { url: avatarUrl } : undefined,
+    fields,
+    footer: { text: userLabel },
+  };
 }
 
 async function handleRedeem(userId, key) {
@@ -89,7 +88,7 @@ async function handleRedeem(userId, key) {
 
 async function handleGenerate(authorId, amount) {
   const count = Math.max(1, Math.min(Number(amount) || 1, 100));
-  const created = await generateTrustKeys(authorId, count);
+  const created = await generateKeys(count, authorId);
   const keys = created.map((k) => k.key).join('\n');
   const lines = [
     `Claves generadas: ${created.length}`,
@@ -121,8 +120,8 @@ async function handleKeys() {
 }
 
 async function handleCheck(targetId, targetTag) {
-  const info = await getUserStatus(targetId, { resetIfNeeded: true });
-  return formatUserReport(targetTag, info);
+  const info = await getTrustStatus(targetId, { resetIfNeeded: true });
+  return info;
 }
 
 async function handleReset(targetId, targetTag) {
@@ -146,7 +145,7 @@ function requireOwner(ctx, userId) {
 async function handleMessage(message, ctx) {
   const opts = parseMessageOptions(message.content || '', ctx.prefix);
 
-  if (opts.action === 'generate' || opts.action === 'keys' || opts.action === 'check' || opts.action === 'reset') {
+  if (opts.action === 'generate' || opts.action === 'keys' || opts.action === 'reset') {
     if (!requireOwner(ctx, message.author?.id)) {
       await message.reply('No tienes permisos para ese comando.');
       return true;
@@ -166,12 +165,16 @@ async function handleMessage(message, ctx) {
     }
     case 'check': {
       if (!opts.targetId) {
-        await message.reply('Debes mencionar a un usuario o pasar su ID.');
+        opts.targetId = message.author.id;
+      } else if (opts.targetId !== message.author.id && !requireOwner(ctx, message.author?.id)) {
+        await message.reply('Solo el owner puede consultar a otros usuarios.');
         return true;
       }
-      const targetTag = `<@${opts.targetId}>`;
-      const text = await handleCheck(opts.targetId, targetTag);
-      await message.reply(text);
+      const targetUser = await message.client.users.fetch(opts.targetId).catch(() => null);
+      const targetTag = targetUser ? targetUser.tag : `<@${opts.targetId}>`;
+      const avatar = targetUser?.displayAvatarURL?.({ size: 256 });
+      const status = await handleCheck(opts.targetId, targetTag);
+      await message.reply({ embeds: [buildStatusEmbed(targetTag, avatar, status)] });
       return true;
     }
     case 'reset': {
@@ -196,7 +199,7 @@ async function handleMessage(message, ctx) {
 async function handleInteraction(interaction, ctx) {
   const sub = interaction.options.getSubcommand();
 
-  if (['generate', 'keys', 'check', 'resetuser'].includes(sub) && !requireOwner(ctx, interaction.user?.id)) {
+  if (['generate', 'keys', 'resetuser'].includes(sub) && !requireOwner(ctx, interaction.user?.id)) {
     await interaction.reply({ content: 'No tienes permisos para ese comando.', ephemeral: true });
     return true;
   }
@@ -216,13 +219,14 @@ async function handleInteraction(interaction, ctx) {
   }
 
   if (sub === 'check') {
-    const user = interaction.options.getUser('usuario');
-    if (!user) {
-      await interaction.reply({ content: 'Debes elegir un usuario.', ephemeral: true });
+    const user = interaction.options.getUser('usuario') || interaction.user;
+    if (user.id !== interaction.user.id && !requireOwner(ctx, interaction.user?.id)) {
+      await interaction.reply({ content: 'Solo el owner puede consultar a otros usuarios.', ephemeral: true });
       return true;
     }
-    const text = await handleCheck(user.id, `<@${user.id}>`);
-    await interaction.reply({ content: text, ephemeral: true });
+    const status = await handleCheck(user.id, user.tag);
+    const avatar = user.displayAvatarURL({ size: 256 });
+    await interaction.reply({ embeds: [buildStatusEmbed(user.tag, avatar, status)], ephemeral: true });
     return true;
   }
 
@@ -249,7 +253,7 @@ export const trustCommand = {
   description: 'Canjea claves trust o gestiona el sistema',
   options: [
     {
-      name: 'usar',
+      name: 'redeem',
       description: 'Canjear una clave trust',
       type: ApplicationCommandOptionType.Subcommand,
       options: [
@@ -281,7 +285,7 @@ export const trustCommand = {
     },
     {
       name: 'check',
-      description: 'Consultar estado trust de un usuario (owner)',
+      description: 'Consultar estado trust de un usuario',
       type: ApplicationCommandOptionType.Subcommand,
       options: [
         {

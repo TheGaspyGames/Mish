@@ -4,7 +4,7 @@ import { fetchStats, pickDecision } from './analysis.js';
 import { buildStateMeta, mergeStates } from './utils/state.js';
 import { detectOutcome, isBlackjackEmbed, parseBlackjackState } from './utils/unbParse.js';
 import { commands, findCommandByName } from './commands/index.js';
-import { DAILY_LIMIT, consumeAssist } from './utils/trust.js';
+import { DAILY_LIMIT, checkAndConsumeAssist } from './utils/trust.js';
 
 const games = new Map(); // messageId -> state
 const pendingCommands = new Map(); // channelId -> { playerId, at }
@@ -75,7 +75,7 @@ function extractMentionId(content) {
 }
 
 async function respondWithAdvice(message, state, playerId) {
-  const usage = await consumeAssist(playerId);
+  const usage = await checkAndConsumeAssist(playerId);
   if (!usage.allowed) {
     return message.channel.send(
       `⛔ Has usado tus ${DAILY_LIMIT} jugadas asistidas de hoy.\nEl entrenamiento sigue activo, pero no recibirás consejos automáticos hasta dentro de 24 horas.`

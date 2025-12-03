@@ -9,7 +9,7 @@ const trustKeySchema = new mongoose.Schema(
     createdBy: { type: String, default: null },
   },
   {
-    timestamps: { createdAt: 'createdAt', updatedAt: false },
+    timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
   }
 );
 
